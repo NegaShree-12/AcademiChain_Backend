@@ -1,15 +1,16 @@
+import dotenv from "dotenv";
+dotenv.config();
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
-import dotenv from "dotenv";
 import http from "http";
 
 import { roleBasedRateLimit, authLimiter } from "./src/middleware/rateLimit.js";
 import SocketService from "./src/services/socketService.js";
 import { realBlockchainService } from "./src/services/realBlockchainService.js";
 import authRoutes from "./src/routes/authRoutes.js";
-
-dotenv.config();
+import studentRoutes from "./src/routes/studentRoutes.js";
+import verificationRoutes from "./src/routes/verificationRoutes.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,13 +20,36 @@ const server = http.createServer(app);
 const socketService = new SocketService(server);
 export { socketService };
 
-// ================= Middleware =================
+// ================= CORS Configuration =================
+// ================= CORS Configuration =================
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'https://c0d4e85db19593.lhr.life',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.log('❌ CORS blocked for origin:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
   })
 );
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -44,72 +68,28 @@ mongoose.connect(process.env.MONGODB_URI, {
 .then(() => console.log('✅ MongoDB connected'))
 .catch(err => console.error('❌ MongoDB connection error:', err.message));
 
-// ================= Schemas =================
-const CredentialSchema = new mongoose.Schema(
-  {
-    title: String,
-    type: String,
-    institution: String,
-    description: String,
-    issueDate: Date,
-    txHash: String,
-    blockNumber: Number,
-    status: { type: String, default: "issued" },
-    studentName: String,
-    studentEmail: String,
-    issuerName: String,
-    ipfsHash: String,
-    metadata: Object,
-  },
-  { timestamps: true }
-);
-
-const StudentSchema = new mongoose.Schema({
-  name: String,
-  email: String,
-  walletAddress: String,
-  status: String,
-  enrollmentDate: String,
-  program: String,
-});
-
-const Credential = mongoose.model("Credential", CredentialSchema);
-const Student = mongoose.model("Student", StudentSchema);
-
-// ================= Health Check =================
+// ================= ROUTES =================
 app.get("/api/health", (req, res) => {
-  res.json({ status: "OK", timestamp: new Date().toISOString() });
+  res.json({ 
+    success: true, 
+    status: "OK", 
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV || 'development',
+    frontendUrl: process.env.FRONTEND_URL
+  });
 });
 
-// ================= AUTH ROUTES - MUST COME FIRST =================
+// Auth Routes
 app.use("/api/auth", authRoutes);
 console.log('✅ Auth routes registered at /api/auth');
 
-// ================= Credential Routes (MongoDB) =================
-app.get("/api/credentials", async (req, res) => {
-  try {
-    const credentials = await Credential.find().sort({ createdAt: -1 });
-    res.json({ success: true, data: credentials });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+// Student Routes
+app.use("/api/student", studentRoutes);
+console.log('✅ Student routes registered at /api/student');
 
-app.post("/api/credentials", async (req, res) => {
-  try {
-    const credential = await Credential.create({
-      ...req.body,
-      issueDate: new Date(),
-      txHash: `0x${Math.random().toString(16).slice(2)}`,
-      blockNumber: Math.floor(Math.random() * 20000000),
-    });
-
-    socketService.broadcast("credential-created", credential);
-    res.json({ success: true, credential });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+// Verification Routes
+app.use("/api/verify", verificationRoutes);
+console.log('✅ Verification routes registered at /api/verify');
 
 // ================= BLOCKCHAIN ROUTES =================
 if (process.env.USE_REAL_BLOCKCHAIN === 'true') {
@@ -244,4 +224,12 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
   console.log(`🔗 Blockchain mode: ${process.env.USE_REAL_BLOCKCHAIN === 'true' ? 'REAL' : 'MOCK'}`);
   console.log(`🔐 Auth endpoint: http://localhost:${PORT}/api/auth/wallet-login`);
+  console.log(`🌐 CORS allowed origins:`);
+  allowedOrigins.forEach(origin => {
+    if (origin instanceof RegExp) {
+      console.log(`   - ${origin.toString()}`);
+    } else {
+      console.log(`   - ${origin}`);
+    }
+  });
 });

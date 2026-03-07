@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
+// Export as authenticate (for verifier routes)
 export const authenticate = async (req, res, next) => {
   try {
     const token = req.header("Authorization")?.replace("Bearer ", "");
@@ -23,7 +24,10 @@ export const authenticate = async (req, res, next) => {
       walletAddress: user.walletAddress,
       role: user.role,
       email: user.email,
-      name: user.name
+      name: user.name,
+      studentId: user.studentId,
+      institutionId: user.institutionId,
+      institutionName: user.institutionName
     };
 
     next();
@@ -34,6 +38,9 @@ export const authenticate = async (req, res, next) => {
     });
   }
 };
+
+// Alias for authenticate (for student/institution routes)
+export const protect = authenticate;
 
 export const authorize = (...roles) => {
   return (req, res, next) => {
@@ -52,10 +59,50 @@ export const authorize = (...roles) => {
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        message: "Insufficient permissions"
+        message: `Insufficient permissions. Required roles: ${roles.join(", ")}. Your role: ${req.user.role}`
       });
     }
 
     next();
   };
+};
+
+// For verifier-specific routes
+export const requireVerifier = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required"
+    });
+  }
+
+  const verifierRoles = ["verifier", "employer", "university"];
+  
+  if (!verifierRoles.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: "Verifier access required"
+    });
+  }
+
+  next();
+};
+
+// For admin-only routes
+export const requireAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required"
+    });
+  }
+
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Admin access required"
+    });
+  }
+
+  next();
 };
