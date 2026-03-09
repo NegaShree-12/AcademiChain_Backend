@@ -38,3 +38,6 @@ Atlas atlas-pc3w44-shard-0 [primary] academichain> db.users.find({ walletAddress
 
 Atlas atlas-pc3w44-shard-0 [primary] academichain> exit
 PS D:\visual studio\AcademiChain_Backend>
+
+
+Now enter your password: XRQR5QlM7dVF7eNp
