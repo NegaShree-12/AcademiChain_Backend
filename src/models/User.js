@@ -1,3 +1,5 @@
+// backend/src/models/User.js
+
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
@@ -8,7 +10,6 @@ const UserSchema = new mongoose.Schema(
       sparse: true,
       lowercase: true,
       trim: true,
-      // REMOVE index: true from here
     },
     email: {
       type: String,
@@ -16,7 +17,6 @@ const UserSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
-      // REMOVE index: true from here
     },
     password: {
       type: String,
@@ -29,15 +29,21 @@ const UserSchema = new mongoose.Schema(
       type: String,
       enum: ["student", "institution", "verifier", "admin", ""],
       default: "",
-      // required: true,
     },
     institutionId: { type: String },
     institutionName: { type: String },
     studentId: { 
       type: String, 
       sparse: true
-      // REMOVE index: true from here
     },
+    program: { type: String, default: "Undeclared" }, // MAKE SURE THIS EXISTS
+    status: { 
+      type: String, 
+      enum: ["active", "pending", "inactive"],
+      default: "pending" 
+    }, // MAKE SURE THIS EXISTS
+    phone: { type: String },
+    credentials: { type: Number, default: 0 },
     isEmailVerified: { type: Boolean, default: false },
     emailVerificationToken: { type: String },
     passwordResetToken: { type: String },
@@ -78,7 +84,7 @@ UserSchema.methods.comparePassword = async function(candidatePassword) {
   }
 };
 
-// Define indexes here - ONCE
+// Define indexes
 UserSchema.index({ email: 1 }, { unique: true });
 UserSchema.index({ walletAddress: 1 }, { sparse: true });
 UserSchema.index({ studentId: 1 }, { sparse: true });

@@ -6,28 +6,41 @@ import { v4 as uuidv4 } from "uuid";
 // @desc    Get all credentials for a student
 // @route   GET /api/student/credentials
 // @access  Private (Student)
+// backend/src/controllers/credentialController.js
+
+// @desc    Get all credentials for a student
+// @route   GET /api/student/credentials
+// @access  Private (Student)
 export const getStudentCredentials = async (req, res) => {
   try {
-    const studentId = req.user?.studentId || req.user?.id;
+    // Get student info from auth token
+    const studentId = req.user?.id;
+    const studentEmail = req.user?.email;
 
-    if (!studentId) {
+    console.log("📋 Fetching credentials for student:", { studentId, studentEmail });
+
+    if (!studentId && !studentEmail) {
       return res.status(400).json({
         success: false,
-        message: "Student ID not found",
+        message: "Student information not found",
       });
     }
 
+    // Find credentials by student email OR student ID
     const credentials = await Credential.find({
-      studentId,
+      $or: [
+        { studentEmail: studentEmail },
+        { studentId: studentId }
+      ],
       isRevoked: false,
     }).sort({ createdAt: -1 });
 
+    console.log(`✅ Found ${credentials.length} credentials for student`);
+
     const stats = {
       total: credentials.length,
-      verified: credentials.filter((c) => c.blockchainStatus === "verified")
-        .length,
-      pending: credentials.filter((c) => c.blockchainStatus === "pending")
-        .length,
+      verified: credentials.filter((c) => c.blockchainStatus === "verified").length,
+      pending: credentials.filter((c) => c.blockchainStatus === "pending").length,
       revoked: credentials.filter((c) => c.isRevoked).length,
     };
 

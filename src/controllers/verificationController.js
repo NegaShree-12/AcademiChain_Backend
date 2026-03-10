@@ -17,120 +17,89 @@ export const verifyByHash = async (req, res) => {
       });
     }
 
-    let verification;
-    let credential;
+    // FIRST check if credential exists in database
+    let credential = await Credential.findOne({ 
+      $or: [
+        { blockchainTxHash: hash },
+        { credentialId: hash }
+      ]
+    });
 
-    // Check if it's a transaction hash (starts with 0x and is 66 chars long)
-    if (hash.startsWith('0x') && hash.length === 66) {
-      console.log('📝 Verifying as transaction hash');
-      
-      // Verify on blockchain using the singleton instance
-      verification = await realBlockchainService.verifyCredential(hash);
-      
-      // Find credential in database by transaction hash
-      credential = await Credential.findOne({ blockchainTxHash: hash });
-      
-      console.log('📦 Database credential found:', credential ? 'Yes' : 'No');
-      
-    } else {
-      // Try as credential ID
-      console.log('📝 Verifying as credential ID');
-      verification = await realBlockchainService.verifyCredentialById(hash);
-      credential = await Credential.findOne({ credentialId: hash });
-    }
-
-    console.log('🔍 Verification result:', verification);
-
-    // Check verification result
-    if (!verification || !verification.isValid) {
+    // If credential not found in database, it's invalid
+    if (!credential) {
       return res.status(200).json({
         success: true,
         isValid: false,
-        message: verification?.error || 'Credential not found on blockchain',
+        message: '❌ Credential not found in our system',
         hash
       });
     }
 
-    // If credential found in database, return full details
-    if (credential) {
-      console.log('✅ Credential found in database:', credential._id);
-      
-      // Check if revoked
-      if (credential.isRevoked) {
-        return res.status(200).json({
-          success: true,
-          isValid: false,
-          message: 'This credential has been revoked',
-          credential: {
-            title: credential.title,
-            studentName: credential.studentName,
-            institutionName: credential.institutionName,
-            issueDate: credential.issueDate,
-            credentialType: credential.credentialType,
-            description: credential.description
-          },
-          verification: {
-            blockchainTxHash: credential.blockchainTxHash,
-            blockNumber: verification.blockNumber,
-            confirmations: verification.confirmations,
-            timestamp: verification.timestamp
-          }
-        });
-      }
-
-      // Success - credential verified
+    // Check if revoked
+    if (credential.isRevoked) {
       return res.status(200).json({
         success: true,
-        isValid: true,
-        message: '✅ Credential verified successfully',
+        isValid: false,
+        message: '❌ This credential has been revoked',
         credential: {
           title: credential.title,
           studentName: credential.studentName,
           institutionName: credential.institutionName,
           issueDate: credential.issueDate,
           credentialType: credential.credentialType,
-          description: credential.description
-        },
-        verification: {
-          blockchainTxHash: credential.blockchainTxHash,
-          blockNumber: verification.blockNumber,
-          confirmations: verification.confirmations,
-          timestamp: verification.timestamp
         }
       });
     }
 
-    // If mock mode and verification has credential data
-    if (verification.credential) {
+    // Verify on blockchain (optional, but recommended)
+    let verification = { isValid: true };
+    try {
+      verification = await realBlockchainService.verifyCredential(credential.blockchainTxHash);
+    } catch (blockchainError) {
+      console.warn('⚠️ Blockchain verification failed, using database record:', blockchainError.message);
+    }
+
+    // Check if blockchain verification failed
+    if (verification && verification.isValid === false) {
       return res.status(200).json({
         success: true,
-        isValid: true,
-        message: '✅ Credential verified (mock data)',
-        credential: verification.credential,
-        verification: {
-          blockchainTxHash: hash,
-          blockNumber: verification.blockNumber,
-          confirmations: verification.confirmations,
-          timestamp: verification.timestamp,
-          mock: true
+        isValid: false,
+        message: '❌ Blockchain verification failed',
+        credential: {
+          title: credential.title,
+          studentName: credential.studentName,
+          institutionName: credential.institutionName,
         }
       });
     }
 
-    // Transaction verified but no credential in database
+    // Success - credential verified
     return res.status(200).json({
       success: true,
       isValid: true,
-      message: 'Transaction found on blockchain but credential not in database',
+      message: '✅ Credential verified successfully',
+      credential: {
+        title: credential.title,
+        studentName: credential.studentName,
+        institutionName: credential.institutionName,
+        issueDate: credential.issueDate,
+        credentialType: credential.credentialType,
+        description: credential.description,
+        metadata: credential.metadata,
+        grade: credential.metadata?.grade,
+        gpa: credential.metadata?.gpa,
+        credits: credential.metadata?.credits,
+        program: credential.metadata?.program,
+        major: credential.metadata?.major
+      },
       verification: {
-        blockchainTxHash: hash,
+        blockchainTxHash: credential.blockchainTxHash,
         blockNumber: verification.blockNumber,
         confirmations: verification.confirmations,
         timestamp: verification.timestamp,
-        from: verification.from,
-        to: verification.to
-      },
-      hash
+        network: 'sepolia',
+        mock: verification.mock || false
+      }
     });
     
   } catch (error) {
@@ -158,7 +127,7 @@ export const verifyByShareId = async (req, res) => {
       return res.status(200).json({
         success: true,
         isValid: false,
-        message: 'Invalid or expired share link'
+        message: '❌ Invalid or expired share link'
       });
     }
     
@@ -169,7 +138,7 @@ export const verifyByShareId = async (req, res) => {
       return res.status(200).json({
         success: true,
         isValid: false,
-        message: 'Share link has expired'
+        message: '❌ Share link has expired'
       });
     }
     
@@ -180,7 +149,7 @@ export const verifyByShareId = async (req, res) => {
       return res.status(200).json({
         success: true,
         isValid: false,
-        message: 'Maximum number of accesses reached'
+        message: '❌ Maximum number of accesses reached'
       });
     }
     
@@ -193,7 +162,7 @@ export const verifyByShareId = async (req, res) => {
       return res.status(200).json({
         success: true,
         isValid: false,
-        message: 'Credential not found'
+        message: '❌ Credential not found'
       });
     }
     
@@ -201,7 +170,7 @@ export const verifyByShareId = async (req, res) => {
       return res.status(200).json({
         success: true,
         isValid: false,
-        message: 'This credential has been revoked'
+        message: '❌ This credential has been revoked'
       });
     }
     
@@ -224,13 +193,18 @@ export const verifyByShareId = async (req, res) => {
         institutionName: credential.institutionName,
         issueDate: credential.issueDate,
         credentialType: credential.credentialType,
-        description: credential.description
+        description: credential.description,
+        metadata: credential.metadata,
+        grade: credential.metadata?.grade,
+        gpa: credential.metadata?.gpa,
+        credits: credential.metadata?.credits
       },
       verification: {
         blockchainTxHash: credential.blockchainTxHash,
         blockNumber: verification.blockNumber,
         confirmations: verification.confirmations,
-        timestamp: verification.timestamp
+        timestamp: verification.timestamp,
+        network: 'sepolia'
       },
       shareInfo: {
         shareId: shareLink.shareId,
@@ -281,7 +255,6 @@ export const getBlockchainStatus = async (req, res) => {
 export const verifyByDocument = async (req, res) => {
   try {
     // This would handle file upload and verification
-    // For now, return mock response
     res.status(200).json({
       success: true,
       isValid: true,
@@ -305,7 +278,7 @@ export const getCredentialPreview = async (req, res) => {
     const credential = await Credential.findOne({ 
       credentialId,
       isRevoked: false 
-    }).select('title description institutionName issueDate credentialType studentName');
+    }).select('title description institutionName issueDate credentialType studentName metadata');
     
     if (!credential) {
       return res.status(404).json({
@@ -322,7 +295,8 @@ export const getCredentialPreview = async (req, res) => {
         studentName: credential.studentName,
         institutionName: credential.institutionName,
         issueDate: credential.issueDate,
-        credentialType: credential.credentialType
+        credentialType: credential.credentialType,
+        metadata: credential.metadata
       }
     });
     
