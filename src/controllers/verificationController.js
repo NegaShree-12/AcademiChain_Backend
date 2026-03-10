@@ -253,6 +253,9 @@ export const getBlockchainStatus = async (req, res) => {
 };
 
 // Verify by document upload
+// backend/src/controllers/verificationController.js
+
+// Verify by document upload
 export const verifyByDocument = async (req, res) => {
   try {
     if (!req.file) {
@@ -269,27 +272,11 @@ export const verifyByDocument = async (req, res) => {
     });
 
     let extractedHash = null;
-    let extractedData = null;
+    let credential = null;
 
     // Handle different file types
-    if (req.file.mimetype.startsWith('image/')) {
-      // For now, return a message that QR scanning from images is coming soon
-      return res.status(200).json({
-        success: true,
-        isValid: false,
-        message: 'QR code scanning from images coming soon. Please use the QR code scanner tab to scan directly with your camera.',
-        mock: true
-      });
-    } 
-    else if (req.file.mimetype === 'application/pdf') {
-      return res.status(200).json({
-        success: true,
-        isValid: false,
-        message: 'PDF verification coming soon. Please use transaction hash or share link for now.',
-        mock: true
-      });
-    } 
-    else if (req.file.mimetype === 'application/json') {
+    if (req.file.mimetype === 'application/json') {
+      // Parse JSON files
       try {
         const jsonContent = JSON.parse(req.file.buffer.toString());
         extractedHash = jsonContent.credential?.blockchainTxHash || 
@@ -301,10 +288,39 @@ export const verifyByDocument = async (req, res) => {
           // Verify the extracted hash
           const verification = await realBlockchainService.verifyCredential(extractedHash);
           
+          if (verification.isValid && verification.credential) {
+            return res.status(200).json({
+              success: true,
+              isValid: true,
+              message: '✅ Credential verified from JSON',
+              credential: verification.credential,
+              verification: {
+                blockchainTxHash: extractedHash,
+                blockNumber: verification.blockNumber,
+                confirmations: verification.confirmations,
+                timestamp: verification.timestamp,
+                network: 'sepolia'
+              }
+            });
+          }
+        }
+      } catch (jsonError) {
+        console.error("Error parsing JSON:", jsonError);
+      }
+    } 
+    else if (req.file.mimetype.startsWith('image/')) {
+      // For image files, we need to extract from filename or metadata
+      // For now, check if filename contains a transaction hash pattern
+      const hashMatch = req.file.originalname.match(/[0-9a-fA-F]{64}/g);
+      if (hashMatch) {
+        extractedHash = `0x${hashMatch[0]}`;
+        const verification = await realBlockchainService.verifyCredential(extractedHash);
+        
+        if (verification.isValid && verification.credential) {
           return res.status(200).json({
             success: true,
-            isValid: verification.isValid,
-            message: verification.isValid ? '✅ Credential verified from JSON' : '❌ Invalid credential in JSON',
+            isValid: true,
+            message: '✅ Credential verified from image filename',
             credential: verification.credential,
             verification: {
               blockchainTxHash: extractedHash,
@@ -315,17 +331,24 @@ export const verifyByDocument = async (req, res) => {
             }
           });
         }
-      } catch (jsonError) {
-        console.error("Error parsing JSON:", jsonError);
-        return res.status(200).json({
-          success: true,
-          isValid: false,
-          message: 'Invalid JSON format or no credential hash found',
-        });
       }
+      
+      return res.status(200).json({
+        success: true,
+        isValid: false,
+        message: 'No valid credential hash found in image. Please use the QR code scanner for images with QR codes.',
+      });
+    }
+    else if (req.file.mimetype === 'application/pdf') {
+      // For PDFs, you'd need to extract text
+      return res.status(200).json({
+        success: true,
+        isValid: false,
+        message: 'PDF verification coming soon. Please use transaction hash or share link for now.',
+      });
     }
 
-    // If no hash found
+    // If we get here, no valid hash was found
     return res.status(200).json({
       success: true,
       isValid: false,
@@ -342,7 +365,6 @@ export const verifyByDocument = async (req, res) => {
     });
   }
 };
-
 // Get credential preview
 export const getCredentialPreview = async (req, res) => {
   try {

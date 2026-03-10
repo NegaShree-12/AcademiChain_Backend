@@ -265,21 +265,25 @@ export const generateShareLink = async (req, res) => {
     console.log("✅ QR Code generated:", qrCode ? "Success" : "Failed");
 
     // Create new share link record
-    const shareLink = await ShareLink.create({
-      shareId,
-      credentialId: credential.credentialId,
-      credentialTitle: credential.title,
-      studentId: userId.toString(),
-      studentName,
-      shareType,
-      expiresAt,
-      maxAccess: maxAccess ? parseInt(maxAccess.toString()) : undefined,
-      isActive: true,
-      accessCount: 0,
-      qrCode,
-    });
+    // In credentialController.js - generateShareLink function
 
-    console.log("✅ New share link created:", shareId);
+// Create share link record
+const shareLink = await ShareLink.create({
+  shareId,
+  credentialId: credential.credentialId, // This maps shareId to the specific credential
+  credentialTitle: credential.title,
+  studentId: userId.toString(),
+  studentName,
+  shareType,
+  expiresAt,
+  maxAccess: maxAccess ? parseInt(maxAccess.toString()) : undefined,
+  isActive: true,
+  accessCount: 0,
+  qrCode,
+});
+
+console.log("✅ New share link created:", shareId);
+console.log("✅ Linked to credential:", credential.credentialId);
 
     res.status(201).json({
       success: true,
