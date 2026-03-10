@@ -1,4 +1,5 @@
 // backend/src/controllers/verificationController.js
+
 import { realBlockchainService } from '../services/realBlockchainService.js';
 import Credential from '../models/Credential.js';
 import ShareLink from '../models/ShareLink.js';
@@ -51,7 +52,7 @@ export const verifyByHash = async (req, res) => {
       });
     }
 
-    // Verify on blockchain (optional, but recommended)
+    // Verify on blockchain
     let verification = { isValid: true };
     try {
       verification = await realBlockchainService.verifyCredential(credential.blockchainTxHash);
@@ -251,21 +252,93 @@ export const getBlockchainStatus = async (req, res) => {
   }
 };
 
-// Verify by document upload (for future implementation)
+// Verify by document upload
 export const verifyByDocument = async (req, res) => {
   try {
-    // This would handle file upload and verification
-    res.status(200).json({
-      success: true,
-      isValid: true,
-      message: 'Document verification coming soon',
-      mock: true
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded'
+      });
+    }
+
+    console.log("📄 Document received:", {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
     });
+
+    let extractedHash = null;
+    let extractedData = null;
+
+    // Handle different file types
+    if (req.file.mimetype.startsWith('image/')) {
+      // For now, return a message that QR scanning from images is coming soon
+      return res.status(200).json({
+        success: true,
+        isValid: false,
+        message: 'QR code scanning from images coming soon. Please use the QR code scanner tab to scan directly with your camera.',
+        mock: true
+      });
+    } 
+    else if (req.file.mimetype === 'application/pdf') {
+      return res.status(200).json({
+        success: true,
+        isValid: false,
+        message: 'PDF verification coming soon. Please use transaction hash or share link for now.',
+        mock: true
+      });
+    } 
+    else if (req.file.mimetype === 'application/json') {
+      try {
+        const jsonContent = JSON.parse(req.file.buffer.toString());
+        extractedHash = jsonContent.credential?.blockchainTxHash || 
+                       jsonContent.transactionHash || 
+                       jsonContent.hash ||
+                       jsonContent.credential?.txHash;
+        
+        if (extractedHash) {
+          // Verify the extracted hash
+          const verification = await realBlockchainService.verifyCredential(extractedHash);
+          
+          return res.status(200).json({
+            success: true,
+            isValid: verification.isValid,
+            message: verification.isValid ? '✅ Credential verified from JSON' : '❌ Invalid credential in JSON',
+            credential: verification.credential,
+            verification: {
+              blockchainTxHash: extractedHash,
+              blockNumber: verification.blockNumber,
+              confirmations: verification.confirmations,
+              timestamp: verification.timestamp,
+              network: 'sepolia'
+            }
+          });
+        }
+      } catch (jsonError) {
+        console.error("Error parsing JSON:", jsonError);
+        return res.status(200).json({
+          success: true,
+          isValid: false,
+          message: 'Invalid JSON format or no credential hash found',
+        });
+      }
+    }
+
+    // If no hash found
+    return res.status(200).json({
+      success: true,
+      isValid: false,
+      message: 'No valid credential hash found in document. Please upload a JSON file with a transaction hash or use the hash verification method.',
+    });
+
   } catch (error) {
     console.error('❌ Document verification error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to verify document'
+      isValid: false,
+      message: 'Failed to verify document',
+      error: error.message
     });
   }
 };

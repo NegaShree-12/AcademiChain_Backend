@@ -1,39 +1,45 @@
+// backend/src/controllers/credentialController.js
+
 import Credential from "../models/Credential.js";
 import ShareLink from "../models/ShareLink.js";
-import { generateQRCode } from "../utils/qrCode.js";
+import { generateQRCode } from '../utils/qrCode.js';
 import { v4 as uuidv4 } from "uuid";
-
-// @desc    Get all credentials for a student
-// @route   GET /api/student/credentials
-// @access  Private (Student)
-// backend/src/controllers/credentialController.js
 
 // @desc    Get all credentials for a student
 // @route   GET /api/student/credentials
 // @access  Private (Student)
 export const getStudentCredentials = async (req, res) => {
   try {
-    // Get student info from auth token
-    const studentId = req.user?.id;
+    // Get the actual MongoDB _id from the user object
+    const userId = req.user?.id; // This is the MongoDB _id
     const studentEmail = req.user?.email;
 
-    console.log("📋 Fetching credentials for student:", { studentId, studentEmail });
+    console.log("📋 Fetching credentials for student:", { userId, studentEmail });
 
-    if (!studentId && !studentEmail) {
+    if (!userId && !studentEmail) {
       return res.status(400).json({
         success: false,
         message: "Student information not found",
       });
     }
 
-    // Find credentials by student email OR student ID
-    const credentials = await Credential.find({
-      $or: [
-        { studentEmail: studentEmail },
-        { studentId: studentId }
-      ],
-      isRevoked: false,
-    }).sort({ createdAt: -1 });
+    // Build query using MongoDB _id as studentId
+    const query = {
+      $or: []
+    };
+
+    if (userId) {
+      query.$or.push({ studentId: userId.toString() });
+    }
+    
+    if (studentEmail) {
+      query.$or.push({ studentEmail: studentEmail });
+    }
+
+    console.log("🔍 Query:", JSON.stringify(query));
+
+    const credentials = await Credential.find(query)
+      .sort({ createdAt: -1 });
 
     console.log(`✅ Found ${credentials.length} credentials for student`);
 
@@ -65,24 +71,89 @@ export const getStudentCredentials = async (req, res) => {
 export const getCredentialById = async (req, res) => {
   try {
     const { id } = req.params;
-    const studentId = req.user?.studentId || req.user?.id;
+    // Get the actual MongoDB _id from the user object
+    const userId = req.user?.id;
+    const studentEmail = req.user?.email;
 
-    const credential = await Credential.findOne({
-      credentialId: id,
-      studentId,
-    });
+    console.log("🔍 Looking for credential:", id);
+    console.log("👤 User ID (MongoDB _id):", userId);
+    console.log("👤 Student Email:", studentEmail);
 
-    if (!credential) {
-      return res.status(404).json({
+    if (!userId && !studentEmail) {
+      return res.status(400).json({
         success: false,
-        message: "Credential not found",
+        message: "Student information not found",
       });
     }
 
+    // Build query - use the MongoDB _id as studentId
+    const query = {
+      $or: []
+    };
+
+    if (userId) {
+      query.$or.push({ studentId: userId.toString() });
+    }
+
+    if (studentEmail) {
+      query.$or.push({ studentEmail: studentEmail });
+    }
+
+    console.log("📋 Query:", JSON.stringify(query));
+
+    let credential = null;
+
+    // Try to find by credentialId first (this is the CRED-xxxxx format)
+    credential = await Credential.findOne({
+      credentialId: id,
+      ...query
+    });
+
+    // If not found, try by _id (only if it looks like an ObjectId)
+    if (!credential && id.match(/^[0-9a-fA-F]{24}$/)) {
+      credential = await Credential.findOne({
+        _id: id,
+        ...query
+      });
+    }
+
+    // If not found, try by blockchainTxHash
+    if (!credential) {
+      credential = await Credential.findOne({
+        blockchainTxHash: id,
+        ...query
+      });
+    }
+
+    if (!credential) {
+      // For debugging, list all credentials for this user
+      const allCredentials = await Credential.find({
+        $or: [
+          { studentId: userId?.toString() },
+          { studentEmail: studentEmail }
+        ]
+      }).select('credentialId title studentId studentEmail');
+      
+      console.log("📋 All credentials for this user:", allCredentials);
+      
+      return res.status(404).json({
+        success: false,
+        message: "Credential not found",
+        debug: {
+          searchedId: id,
+          userId: userId,
+          studentEmail: studentEmail,
+          availableCredentials: allCredentials
+        }
+      });
+    }
+
+    console.log("✅ Credential found:", credential.credentialId);
+    
     // Get share links for this credential
     const shareLinks = await ShareLink.find({
-      credentialId: id,
-      studentId,
+      credentialId: credential.credentialId,
+      studentId: userId?.toString(),
     }).sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -103,30 +174,34 @@ export const getCredentialById = async (req, res) => {
 // @desc    Generate share link and QR code for credential
 // @route   POST /api/student/credentials/:id/share
 // @access  Private (Student)
-// @desc    Generate share link and QR code for credential
-// @route   POST /api/student/credentials/:id/share
-// @access  Private (Student)
 export const generateShareLink = async (req, res) => {
   try {
     const { id } = req.params;
     const { shareType = "public", expiresInDays = 7, maxAccess } = req.body;
-    const studentId = req.user?.studentId || req.user?.id;
+    const userId = req.user?.id; // MongoDB _id
     const studentName = req.user?.name;
 
     console.log("📤 Generating share link for credential:", id);
-    console.log("👤 Student ID:", studentId);
+    console.log("👤 User ID:", userId);
 
-    if (!studentId) {
+    if (!userId) {
       return res.status(400).json({
         success: false,
-        message: "Student ID not found",
+        message: "User ID not found",
       });
     }
 
     // Find credential
     const credential = await Credential.findOne({
-      credentialId: id,
-      studentId,
+      $or: [
+        { credentialId: id },
+        { _id: id },
+        { blockchainTxHash: id }
+      ],
+      $or: [
+        { studentId: userId.toString() },
+        { studentEmail: req.user?.email }
+      ]
     });
 
     if (!credential) {
@@ -144,51 +219,89 @@ export const generateShareLink = async (req, res) => {
       });
     }
 
+    // Check if a share link already exists for this credential
+    const existingShare = await ShareLink.findOne({
+      credentialId: credential.credentialId,
+      studentId: userId.toString(),
+      isActive: true,
+      expiresAt: { $gt: new Date() }
+    });
+
+    if (existingShare) {
+      console.log("✅ Using existing share link:", existingShare.shareId);
+      
+      // Generate QR code for existing share
+      const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+      const existingQrCode = await generateQRCode(`${baseUrl}/verify?shareId=${existingShare.shareId}`);
+      
+      return res.status(200).json({
+        success: true,
+        data: {
+          shareId: existingShare.shareId,
+          shareUrl: `${baseUrl}/verify?shareId=${existingShare.shareId}`,
+          expiresAt: existingShare.expiresAt,
+          shareLink: existingShare,
+          qrCode: existingQrCode,
+        },
+      });
+    }
+
     // Generate unique share ID
     const shareId = uuidv4();
 
-    // Create share link URL - USE YOUR ACTUAL DOMAIN, NOT LOCALHOST
-    const baseUrl = process.env.FRONTEND_URL || "https://yourdomain.com";
+    // Create share link URL
+    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
     const shareUrl = `${baseUrl}/verify?shareId=${shareId}`;
 
     console.log("🔗 Share URL:", shareUrl);
-
-    // Generate QR code
-    const qrCodeDataUrl = await generateQRCode(shareUrl);
 
     // Calculate expiry date
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + parseInt(expiresInDays.toString()));
 
-    // Create share link record
+    // Generate QR code
+    console.log("📱 Generating QR code for:", shareUrl);
+    const qrCode = await generateQRCode(shareUrl);
+    console.log("✅ QR Code generated:", qrCode ? "Success" : "Failed");
+
+    // Create new share link record
     const shareLink = await ShareLink.create({
       shareId,
       credentialId: credential.credentialId,
       credentialTitle: credential.title,
-      studentId,
+      studentId: userId.toString(),
       studentName,
       shareType,
       expiresAt,
       maxAccess: maxAccess ? parseInt(maxAccess.toString()) : undefined,
-      qrCode: qrCodeDataUrl,
       isActive: true,
       accessCount: 0,
+      qrCode,
     });
 
-    console.log("✅ Share link created:", shareId);
+    console.log("✅ New share link created:", shareId);
 
     res.status(201).json({
       success: true,
       data: {
         shareId,
         shareUrl,
-        qrCode: qrCodeDataUrl,
         expiresAt,
         shareLink,
+        qrCode,
       },
     });
   } catch (error) {
     console.error("❌ Error generating share link:", error);
+    
+    // Handle duplicate key error specifically
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "A share link for this credential already exists",
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: "Error generating share link",
@@ -202,17 +315,17 @@ export const generateShareLink = async (req, res) => {
 // @access  Private (Student)
 export const getStudentShares = async (req, res) => {
   try {
-    const studentId = req.user?.studentId || req.user?.id;
+    const userId = req.user?.id;
 
     const shareLinks = await ShareLink.find({
-      studentId,
+      studentId: userId?.toString(),
     }).sort({ createdAt: -1 });
 
     const activeShares = shareLinks.filter(
-      (s) => s.isActive && s.expiresAt > new Date(),
+      (s) => s.isActive && new Date(s.expiresAt) > new Date(),
     );
     const expiredShares = shareLinks.filter(
-      (s) => !s.isActive || s.expiresAt <= new Date(),
+      (s) => !s.isActive || new Date(s.expiresAt) <= new Date(),
     );
 
     res.status(200).json({
@@ -222,7 +335,7 @@ export const getStudentShares = async (req, res) => {
         total: shareLinks.length,
         active: activeShares.length,
         expired: expiredShares.length,
-        totalAccesses: shareLinks.reduce((sum, s) => sum + s.accessCount, 0),
+        totalAccesses: shareLinks.reduce((sum, s) => sum + (s.accessCount || 0), 0),
       },
     });
   } catch (error) {
@@ -241,9 +354,12 @@ export const getStudentShares = async (req, res) => {
 export const revokeShareLink = async (req, res) => {
   try {
     const { shareId } = req.params;
-    const studentId = req.user?.studentId || req.user?.id;
+    const userId = req.user?.id;
 
-    const shareLink = await ShareLink.findOne({ shareId, studentId });
+    const shareLink = await ShareLink.findOne({ 
+      shareId, 
+      studentId: userId?.toString() 
+    });
 
     if (!shareLink) {
       return res.status(404).json({
@@ -275,12 +391,17 @@ export const revokeShareLink = async (req, res) => {
 // @access  Private (Student)
 export const getStudentDashboardStats = async (req, res) => {
   try {
-    const studentId = req.user?.studentId || req.user?.id;
+    const userId = req.user?.id;
 
     const [credentials, shares, recentActivity] = await Promise.all([
-      Credential.find({ studentId }).sort({ createdAt: -1 }),
-      ShareLink.find({ studentId }).sort({ createdAt: -1 }),
-      getRecentActivity(studentId),
+      Credential.find({ 
+        $or: [
+          { studentId: userId?.toString() },
+          { studentEmail: req.user?.email }
+        ] 
+      }).sort({ createdAt: -1 }),
+      ShareLink.find({ studentId: userId?.toString() }).sort({ createdAt: -1 }),
+      getRecentActivity(userId?.toString(), req.user?.email),
     ]);
 
     const stats = {
@@ -291,9 +412,9 @@ export const getStudentDashboardStats = async (req, res) => {
       pendingCredentials: credentials.filter(
         (c) => c.blockchainStatus === "pending",
       ).length,
-      activeShares: shares.filter((s) => s.isActive && s.expiresAt > new Date())
+      activeShares: shares.filter((s) => s.isActive && new Date(s.expiresAt) > new Date())
         .length,
-      totalVerifications: shares.reduce((sum, s) => sum + s.accessCount, 0),
+      totalVerifications: shares.reduce((sum, s) => sum + (s.accessCount || 0), 0),
       recentActivity,
     };
 
@@ -312,12 +433,17 @@ export const getStudentDashboardStats = async (req, res) => {
 };
 
 // Helper function to get recent activity
-async function getRecentActivity(studentId) {
+async function getRecentActivity(studentId, studentEmail) {
   const recentShares = await ShareLink.find({ studentId })
     .sort({ createdAt: -1 })
     .limit(5);
 
-  const recentCredentials = await Credential.find({ studentId })
+  const recentCredentials = await Credential.find({
+    $or: [
+      { studentId },
+      { studentEmail }
+    ]
+  })
     .sort({ createdAt: -1 })
     .limit(5);
 
@@ -340,6 +466,6 @@ async function getRecentActivity(studentId) {
   ];
 
   return activity
-    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 10);
 }

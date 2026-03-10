@@ -1,3 +1,5 @@
+// backend/src/models/ShareLink.js
+
 import mongoose from "mongoose";
 
 const ShareLinkSchema = new mongoose.Schema(
@@ -5,13 +7,11 @@ const ShareLinkSchema = new mongoose.Schema(
     shareId: { 
       type: String, 
       required: true, 
-      unique: true 
-      // REMOVE index: true from here
+      unique: true // This should be unique, not link
     },
     credentialId: { 
       type: String, 
       required: true 
-      // REMOVE index: true from here
     },
     credentialTitle: { 
       type: String, 
@@ -20,7 +20,6 @@ const ShareLinkSchema = new mongoose.Schema(
     studentId: { 
       type: String, 
       required: true 
-      // REMOVE index: true from here
     },
     studentName: { 
       type: String, 
@@ -53,16 +52,18 @@ const ShareLinkSchema = new mongoose.Schema(
     qrCode: { 
       type: String 
     },
+    // Remove the link field if it exists in your schema
   },
   { 
     timestamps: true 
   }
 );
 
-// Define indexes here - ONCE
+// Define indexes
 ShareLinkSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 ShareLinkSchema.index({ studentId: 1, createdAt: -1 });
 ShareLinkSchema.index({ credentialId: 1 });
+ShareLinkSchema.index({ shareId: 1 }, { unique: true }); // Make sure shareId is unique
 
 // Check if model exists before creating
 const ShareLink = mongoose.models.ShareLink || mongoose.model("ShareLink", ShareLinkSchema);

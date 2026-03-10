@@ -1,3 +1,5 @@
+// backend/src/routes/studentRoutes.js
+
 import express from "express";
 import { protect, authorize } from "../middleware/authMiddleware.js";
 import {
@@ -21,7 +23,7 @@ router.get("/dashboard/stats", getStudentDashboardStats);
 // Credentials routes
 router.get("/credentials", getStudentCredentials);
 router.get("/credentials/:id", getCredentialById);
-router.post("/credentials/:id/share", generateShareLink);
+router.post("/credentials/:id/share", generateShareLink); // <-- This endpoint needs to be implemented
 
 // Share links routes
 router.get("/shares", getStudentShares);
