@@ -47,7 +47,7 @@ const allowedOrigins = [
   'https://c0d4e85db19593.lhr.life',
   'https://academicchain-frontend.vercel.app',
   'https://academichain-frontend.vercel.app',
-  'https://academichain-frontend-ozlnoazea-negashrees-projects.vercel.app', // ADD THIS
+  'https://academichain-frontend-ntx0qswdr-negashrees-projects.vercel.app', // ADD THIS
   process.env.FRONTEND_URL,
   process.env.FRONTEND_PUBLIC_URL
 ].filter(Boolean);
