@@ -304,7 +304,7 @@ app.use((err, req, res, next) => {
 // ================= Start Server =================
 server.listen(PORT, '0.0.0.0', () => {
   console.log('\n' + '='.repeat(50));
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`🚀 Server running at http://0.0.0.0:${PORT}`);
   console.log('='.repeat(50));
   console.log(`🔗 Blockchain mode: ${process.env.USE_REAL_BLOCKCHAIN === 'true' ? 'REAL' : 'MOCK'}`);
   console.log(`📄 Contract address: ${process.env.CONTRACT_ADDRESS || 'Not set'}`);
