@@ -45,10 +45,10 @@ const allowedOrigins = [
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'https://c0d4e85db19593.lhr.life',
+  'https://academicchain-frontend.vercel.app',  // ← ADD THIS LINE
   process.env.FRONTEND_URL,
   process.env.FRONTEND_PUBLIC_URL
 ].filter(Boolean);
-
 app.use(
   cors({
     origin: function (origin, callback) {
