@@ -39,6 +39,7 @@ const socketService = new SocketService(server);
 export { socketService };
 
 // ================= CORS Configuration =================
+// ================= CORS Configuration =================
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
@@ -47,18 +48,21 @@ const allowedOrigins = [
   'https://c0d4e85db19593.lhr.life',
   'https://academicchain-frontend.vercel.app',
   'https://academichain-frontend.vercel.app',
-  'https://academichain-frontend-ozlnoazea-negashrees-projects.vercel.app',
-  'https://academichain-frontend-ntx0qswdr-negashrees-projects.vercel.app', // ADD THIS
   process.env.FRONTEND_URL,
   process.env.FRONTEND_PUBLIC_URL
 ].filter(Boolean);
+
+// Add this to allow ALL Vercel preview URLs
+const vercelPreviewRegex = /^https:\/\/academichain-frontend-.*\.vercel\.app$/;
+
 app.use(
   cors({
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps, curl)
       if (!origin) return callback(null, true);
       
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      // Check if origin matches any allowed origin OR the Vercel preview pattern
+      if (allowedOrigins.indexOf(origin) !== -1 || vercelPreviewRegex.test(origin)) {
         callback(null, true);
       } else {
         console.log('❌ CORS blocked for origin:', origin);
