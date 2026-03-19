@@ -45,7 +45,9 @@ const allowedOrigins = [
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'https://c0d4e85db19593.lhr.life',
-  'https://academichain-frontend.vercel.app',  // ← ADD THIS LINE
+  'https://academicchain-frontend.vercel.app',
+  'https://academichain-frontend.vercel.app',
+  'https://academichain-frontend-ozlnoazea-negashrees-projects.vercel.app', // ADD THIS
   process.env.FRONTEND_URL,
   process.env.FRONTEND_PUBLIC_URL
 ].filter(Boolean);
