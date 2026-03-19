@@ -6,7 +6,8 @@ const CredentialSchema = new mongoose.Schema(
     credentialId: { 
       type: String, 
       required: true, 
-      unique: true 
+      unique: true,
+      index:true 
     },
     studentId: { 
       type: String, 
@@ -92,6 +93,8 @@ const CredentialSchema = new mongoose.Schema(
 CredentialSchema.index({ studentId: 1, createdAt: -1 });
 CredentialSchema.index({ institutionId: 1, credentialType: 1 });
 CredentialSchema.index({ credentialId: 1, isRevoked: 1 });
+CredentialSchema.index({ blockchainTxHash: 1 }); // Add this for hash lookups
+
 
 // Check if model exists before creating
 const Credential = mongoose.models.Credential || mongoose.model("Credential", CredentialSchema);

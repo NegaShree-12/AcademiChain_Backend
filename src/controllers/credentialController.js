@@ -191,24 +191,42 @@ export const generateShareLink = async (req, res) => {
       });
     }
 
-    // Find credential
-    const credential = await Credential.findOne({
-      $or: [
-        { credentialId: id },
-        { _id: id },
-        { blockchainTxHash: id }
-      ],
-      $or: [
-        { studentId: userId.toString() },
-        { studentEmail: req.user?.email }
-      ]
+    // FIXED: Query by credentialId OR _id, but handle ObjectId properly
+    let credential = null;
+    
+    // First, try to find by credentialId (this is your custom ID like CRED-xxxx)
+    credential = await Credential.findOne({ 
+      credentialId: id 
     });
+    
+    // If not found and the id looks like a MongoDB ObjectId (24 chars hex), try by _id
+    if (!credential && id.match(/^[0-9a-fA-F]{24}$/)) {
+      credential = await Credential.findOne({ 
+        _id: id 
+      });
+    }
+    
+    // If still not found, try by blockchainTxHash
+    if (!credential) {
+      credential = await Credential.findOne({ 
+        blockchainTxHash: id 
+      });
+    }
 
     if (!credential) {
       console.log("❌ Credential not found:", id);
       return res.status(404).json({
         success: false,
         message: "Credential not found",
+      });
+    }
+
+    // Check if credential belongs to this user
+    if (credential.studentId !== userId.toString() && 
+        credential.studentEmail !== req.user?.email) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to share this credential",
       });
     }
 
@@ -221,7 +239,7 @@ export const generateShareLink = async (req, res) => {
 
     // Check if a share link already exists for this credential
     const existingShare = await ShareLink.findOne({
-      credentialId: credential.credentialId,
+      credentialId: credential.credentialId, // Use credentialId, not _id
       studentId: userId.toString(),
       isActive: true,
       expiresAt: { $gt: new Date() }
@@ -232,16 +250,19 @@ export const generateShareLink = async (req, res) => {
       
       // Generate QR code for existing share
       const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-      const existingQrCode = await generateQRCode(`${baseUrl}/verify?shareId=${existingShare.shareId}`);
+      const shareUrl = `${baseUrl}/verify?shareId=${existingShare.shareId}`;
+      const existingQrCode = await generateQRCode(shareUrl);
       
       return res.status(200).json({
         success: true,
         data: {
           shareId: existingShare.shareId,
-          shareUrl: `${baseUrl}/verify?shareId=${existingShare.shareId}`,
+          shareUrl: shareUrl,
           expiresAt: existingShare.expiresAt,
           shareLink: existingShare,
           qrCode: existingQrCode,
+          credentialId: credential.credentialId,
+          credentialTitle: credential.title
         },
       });
     }
@@ -264,26 +285,23 @@ export const generateShareLink = async (req, res) => {
     const qrCode = await generateQRCode(shareUrl);
     console.log("✅ QR Code generated:", qrCode ? "Success" : "Failed");
 
-    // Create new share link record
-    // In credentialController.js - generateShareLink function
+    // Create new share link record - use credential.credentialId, not credential._id
+    const shareLink = await ShareLink.create({
+      shareId,
+      credentialId: credential.credentialId, // This is the string ID like CRED-xxxx
+      credentialTitle: credential.title,
+      studentId: userId.toString(),
+      studentName,
+      shareType,
+      expiresAt,
+      maxAccess: maxAccess ? parseInt(maxAccess.toString()) : undefined,
+      isActive: true,
+      accessCount: 0,
+      qrCode,
+    });
 
-// Create share link record
-const shareLink = await ShareLink.create({
-  shareId,
-  credentialId: credential.credentialId, // This maps shareId to the specific credential
-  credentialTitle: credential.title,
-  studentId: userId.toString(),
-  studentName,
-  shareType,
-  expiresAt,
-  maxAccess: maxAccess ? parseInt(maxAccess.toString()) : undefined,
-  isActive: true,
-  accessCount: 0,
-  qrCode,
-});
-
-console.log("✅ New share link created:", shareId);
-console.log("✅ Linked to credential:", credential.credentialId);
+    console.log("✅ New share link created:", shareId);
+    console.log("✅ Linked to credential:", credential.credentialId);
 
     res.status(201).json({
       success: true,
@@ -293,6 +311,8 @@ console.log("✅ Linked to credential:", credential.credentialId);
         expiresAt,
         shareLink,
         qrCode,
+        credentialId: credential.credentialId,
+        credentialTitle: credential.title
       },
     });
   } catch (error) {
@@ -308,12 +328,11 @@ console.log("✅ Linked to credential:", credential.credentialId);
     
     res.status(500).json({
       success: false,
-      message: "Error generating share link",
+      message: "Error generating share link: " + error.message,
       error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
-
 // @desc    Get all share links for a student
 // @route   GET /api/student/shares
 // @access  Private (Student)

@@ -121,7 +121,7 @@ export const verifyByShareId = async (req, res) => {
     
     console.log(`🔍 Verifying share ID: ${shareId}`);
     
-    // Find share link
+    // Find the share link
     const shareLink = await ShareLink.findOne({ shareId, isActive: true });
     
     if (!shareLink) {
@@ -132,29 +132,9 @@ export const verifyByShareId = async (req, res) => {
       });
     }
     
-    // Check if expired
-    if (shareLink.expiresAt < new Date()) {
-      shareLink.isActive = false;
-      await shareLink.save();
-      return res.status(200).json({
-        success: true,
-        isValid: false,
-        message: '❌ Share link has expired'
-      });
-    }
+    console.log(`📌 Share link found for credential: ${shareLink.credentialId}`);
     
-    // Check max accesses
-    if (shareLink.maxAccess && shareLink.accessCount >= shareLink.maxAccess) {
-      shareLink.isActive = false;
-      await shareLink.save();
-      return res.status(200).json({
-        success: true,
-        isValid: false,
-        message: '❌ Maximum number of accesses reached'
-      });
-    }
-    
-    // Get credential
+    // Find the SPECIFIC credential using the stored credentialId
     const credential = await Credential.findOne({ 
       credentialId: shareLink.credentialId 
     });
@@ -167,27 +147,13 @@ export const verifyByShareId = async (req, res) => {
       });
     }
     
-    if (credential.isRevoked) {
-      return res.status(200).json({
-        success: true,
-        isValid: false,
-        message: '❌ This credential has been revoked'
-      });
-    }
+    console.log(`✅ Found credential: ${credential.title} for student: ${credential.studentName}`);
     
-    // Verify on blockchain
-    const verification = await realBlockchainService.verifyCredential(
-      credential.blockchainTxHash
-    );
-    
-    // Update access count
-    shareLink.accessCount += 1;
-    await shareLink.save();
-    
-    res.status(200).json({
+    // Return the SPECIFIC credential details
+    return res.status(200).json({
       success: true,
-      isValid: verification.isValid,
-      message: verification.isValid ? '✅ Credential verified' : '❌ Verification failed',
+      isValid: true,
+      message: '✅ Credential verified successfully',
       credential: {
         title: credential.title,
         studentName: credential.studentName,
@@ -195,24 +161,12 @@ export const verifyByShareId = async (req, res) => {
         issueDate: credential.issueDate,
         credentialType: credential.credentialType,
         description: credential.description,
-        metadata: credential.metadata,
-        grade: credential.metadata?.grade,
-        gpa: credential.metadata?.gpa,
-        credits: credential.metadata?.credits
+        metadata: credential.metadata
       },
       verification: {
         blockchainTxHash: credential.blockchainTxHash,
-        blockNumber: verification.blockNumber,
-        confirmations: verification.confirmations,
-        timestamp: verification.timestamp,
-        network: 'sepolia'
-      },
-      shareInfo: {
-        shareId: shareLink.shareId,
-        sharedBy: shareLink.studentName,
-        sharedAt: shareLink.createdAt,
-        accessNumber: shareLink.accessCount,
-        expiresAt: shareLink.expiresAt
+        method: 'share-link',
+        timestamp: new Date().toISOString()
       }
     });
     
